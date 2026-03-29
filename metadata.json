@@ -1,0 +1,5 @@
+{
+  "name": "WStage",
+  "description": "专为 WStage (玩转舞台) 团队设计的工时计算工具。支持 Excel/CSV 文件上传，自动应用加班、正式员工及节假日倍率计算结算金额。",
+  "requestFramePermissions": []
+}
