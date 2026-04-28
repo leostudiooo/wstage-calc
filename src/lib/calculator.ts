@@ -31,6 +31,40 @@ function getDayKey(date: Date): string {
   return d.toISOString().split('T')[0];
 }
 
+function getLate23Hours(row: WorkRecord): number {
+  const startTime = new Date(row['开始时间']);
+  const endTime = new Date(row['结束时间']);
+
+  if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) return 0;
+
+  const hours = Number(row['基础工时']) || 0;
+  if (hours <= 0) return 0;
+
+  // Determine the "day" this shift belongs to (same logic as getDayKey: day starts at 04:00)
+  const dayDate = new Date(startTime);
+  if (dayDate.getHours() < 4) {
+    dayDate.setDate(dayDate.getDate() - 1);
+  }
+
+  // 23:00 threshold for this day
+  const threshold23 = new Date(dayDate);
+  threshold23.setHours(23, 0, 0, 0);
+
+  if (endTime <= threshold23) {
+    // All work is before 23:00
+    return 0;
+  } else if (startTime >= threshold23) {
+    // All work is after 23:00
+    return hours;
+  } else {
+    // Work spans the 23:00 threshold — prorate by duration
+    const totalDuration = endTime.getTime() - startTime.getTime();
+    if (totalDuration <= 0) return 0;
+    const lateDuration = endTime.getTime() - threshold23.getTime();
+    return hours * (lateDuration / totalDuration);
+  }
+}
+
 function isVenueWork(jobType: string): boolean {
   const type = String(jobType || '');
   return type.includes('正式') || type.includes('实习');
@@ -113,24 +147,16 @@ export function processWorkHours(data: WorkRecord[], hourlyRate: number): Settle
       const hours = Number(row['基础工时']) || 0;
       if (hours <= 0) return;
 
-      let rate1x = 0;
-      let rate2x = 0;
-      let remaining = hours;
+      // Rule 1: hours beyond 8 per day are doubled
+      const rate2x = Math.max(0, hours - Math.max(0, 8 - cumulative));
+      cumulative += hours;
 
-      if (cumulative < 8) {
-        const available = 8 - cumulative;
-        const take = Math.min(remaining, available);
-        rate1x += take;
-        remaining -= take;
-        cumulative += take;
-      }
+      // Rule 2: hours after 23:00 (day runs 04:00–28:00) are doubled
+      const lateHours = getLate23Hours(row);
 
-      if (remaining > 0) {
-        rate2x += remaining;
-        cumulative += remaining;
-      }
-
-      let adjusted = rate1x + rate2x * 2;
+      // Take the higher overtime amount from the two rules
+      const overtime = Math.max(rate2x, lateHours);
+      let adjusted = hours + overtime;
       
       const isFormal = String(row['工作种类'] || '').includes('正式');
       const isHoliday = String(row['节假日、期末周'] || '').trim() === '是';
