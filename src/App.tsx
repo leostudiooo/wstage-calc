@@ -396,7 +396,7 @@ export default function App() {
                     <ul className="space-y-3 text-xs leading-relaxed opacity-70">
                       <li className="flex gap-3">
                         <span className="font-mono opacity-30">●</span>
-                        <span>当日累计超出 8 小时的部分双倍。</span>
+                        <span>当日累计超出 8 小时的部分双倍；23:00 - 次日 04:00 部分双倍。两者取更高的计算。</span>
                       </li>
                       <li className="flex gap-3">
                         <span className="font-mono opacity-30">●</span>
