@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import jschardet from 'jschardet';
-import { Upload, Download, Users, Clock, CreditCard, Trash2, AlertCircle, Eye, EyeOff, Settings2, ClipboardPaste, Loader2, Check } from 'lucide-react';
+import { Upload, Download, Users, Clock, CreditCard, Trash2, AlertCircle, Eye, EyeOff, Settings2, ClipboardPaste, Loader2, Check, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { processWorkHours, exportToExcel, SettlementResult, WorkRecord, normalizeData } from './lib/calculator';
 import { clsx, type ClassValue } from 'clsx';
@@ -18,15 +18,38 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [hourlyRate, setHourlyRate] = useState<number>(25);
   const [showAmount, setShowAmount] = useState(true);
+  const [includeSettled, setIncludeSettled] = useState(false);
+  const [venueFilters, setVenueFilters] = useState<string[]>([]);
+  const [isVenueMenuOpen, setIsVenueMenuOpen] = useState(false);
   const [rawData, setRawData] = useState<WorkRecord[]>([]);
+  const venueMenuRef = useRef<HTMLDivElement>(null);
+
+  const availableVenues = Array.from(
+    new Set<string>(rawData.map(row => String(row['场馆-去重引用'] || '').trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b, 'zh-CN'));
+
+  useEffect(() => {
+    setVenueFilters(availableVenues);
+  }, [rawData]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (venueMenuRef.current && !venueMenuRef.current.contains(event.target as Node)) {
+        setIsVenueMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   // Re-calculate when hourlyRate changes
   useEffect(() => {
     if (rawData.length > 0) {
-      const processed = processWorkHours(rawData, hourlyRate);
+      const processed = processWorkHours(rawData, hourlyRate, includeSettled, venueFilters);
       setResults(processed);
     }
-  }, [hourlyRate, rawData]);
+  }, [hourlyRate, includeSettled, rawData, venueFilters]);
 
   const processRawData = useCallback((data: any[][]) => {
     if (data.length === 0) {
@@ -48,9 +71,9 @@ export default function App() {
       firstRow.forEach((name, idx) => headerMap.set(name, idx));
       
       finalData = data.slice(1).map(row => {
-        const record: any[] = new Array(11).fill('');
+        const record: any[] = new Array(12).fill('');
         const columns = [
-          '活动名称', '姓名', '一卡通号', '工作种类', '开始时间', 
+          '活动名称', '姓名', '一卡通号', '工作种类', '场馆-去重引用', '开始时间',
           '结束时间', '工时单', '基础工时', '节假日、期末周', '工作备注', '已结算'
         ];
         columns.forEach((col, idx) => {
@@ -82,12 +105,12 @@ export default function App() {
       // Stage 2: Show checkmark for 0.5s
       setTimeout(() => {
         setRawData(normalized);
-        const processed = processWorkHours(normalized, hourlyRate);
+        const processed = processWorkHours(normalized, hourlyRate, includeSettled, venueFilters);
         setResults(processed);
         setProcessingStatus('idle');
       }, 500);
     }, 500);
-  }, [hourlyRate]);
+  }, [hourlyRate, includeSettled, venueFilters]);
 
   const handleFileUpload = useCallback((file: File) => {
     const reader = new FileReader();
@@ -164,6 +187,8 @@ export default function App() {
   const clearResults = () => {
     setResults([]);
     setRawData([]);
+    setIncludeSettled(false);
+    setVenueFilters([]);
     setError(null);
   };
 
@@ -175,6 +200,7 @@ export default function App() {
         '姓名': '张三',
         '一卡通号': '213210001',
         '工作种类': '正式-灯光',
+        '场馆-去重引用': '示例场馆',
         '开始时间': '2026-03-01 08:00:00',
         '结束时间': '2026-03-01 18:00:00',
         '工时单': 'S001',
@@ -188,6 +214,7 @@ export default function App() {
         '姓名': '李四',
         '一卡通号': '213210002',
         '工作种类': '实习-音响',
+        '场馆-去重引用': '示例场馆',
         '开始时间': '2026-03-01 09:00:00',
         '结束时间': '2026-03-01 12:00:00',
         '工时单': 'S002',
@@ -201,6 +228,7 @@ export default function App() {
         '姓名': '张三',
         '一卡通号': '213210001',
         '工作种类': '正式-舞美',
+        '场馆-去重引用': '示例场馆',
         '开始时间': '2026-03-02 10:00:00',
         '结束时间': '2026-03-02 14:00:00',
         '工时单': 'S003',
@@ -218,7 +246,7 @@ export default function App() {
       // Stage 2: Show checkmark for 0.5s
       setTimeout(() => {
         setRawData(sampleData);
-        const processed = processWorkHours(sampleData, hourlyRate);
+        const processed = processWorkHours(sampleData, hourlyRate, includeSettled, venueFilters);
         setResults(processed);
         setProcessingStatus('idle');
         setError(null);
@@ -240,7 +268,7 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-3">
-            {results.length > 0 && (
+            {rawData.length > 0 && (
               <div className="flex items-center gap-2 mr-4 border-r border-[#141414]/10 pr-4">
                 <button 
                   onClick={() => setShowAmount(!showAmount)}
@@ -259,10 +287,60 @@ export default function App() {
                     className="w-12 text-xs font-bold focus:outline-none bg-transparent"
                   />
                 </div>
+                <label className="flex items-center gap-2 px-2 py-1.5 text-xs font-bold cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={includeSettled}
+                    onChange={(e) => setIncludeSettled(e.target.checked)}
+                    className="h-4 w-4 accent-[#141414]"
+                  />
+                  包含已结算（显示全部）
+                </label>
+                <div ref={venueMenuRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsVenueMenuOpen(!isVenueMenuOpen)}
+                    className="flex items-center gap-2 bg-white border border-[#141414]/10 px-3 py-1.5 text-xs font-bold rounded-md hover:bg-[#141414]/5"
+                    aria-expanded={isVenueMenuOpen}
+                    aria-haspopup="menu"
+                  >
+                    场馆
+                    {venueFilters.length !== availableVenues.length && (
+                      <span className="bg-[#141414] text-white rounded-full px-1.5 text-[10px]">
+                        {venueFilters.length}
+                      </span>
+                    )}
+                    <ChevronDown size={14} className={cn("opacity-50 transition-transform", isVenueMenuOpen && "rotate-180")} />
+                  </button>
+                  {isVenueMenuOpen && (
+                    <div className="absolute right-0 top-full z-50 mt-2 min-w-56 max-h-64 overflow-y-auto rounded-md border border-[#141414]/10 bg-white p-2 shadow-lg">
+                      {availableVenues.map(venue => (
+                          <label key={venue} className="flex items-center gap-2 rounded px-2 py-2 text-xs font-bold cursor-pointer hover:bg-[#141414]/5">
+                            <input
+                              type="checkbox"
+                              checked={venueFilters.includes(venue)}
+                              onChange={(e) => setVenueFilters(current => e.target.checked
+                                ? [...current, venue]
+                                : current.filter(selected => selected !== venue))}
+                              className="h-4 w-4 accent-[#141414]"
+                            />
+                            <span className="truncate">{venue}</span>
+                          </label>
+                        ))}
+                      <button
+                        type="button"
+                        onClick={() => setVenueFilters(availableVenues)}
+                        className="mt-1 w-full border-t border-[#141414]/10 px-2 pt-2 text-left text-[10px] font-bold opacity-50 hover:opacity-100"
+                      >
+                        清除筛选
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
             
-            {results.length > 0 && (
+            {rawData.length > 0 && (
               <div className="flex gap-2">
                 <button
                   onClick={() => exportToExcel(results)}
@@ -322,7 +400,7 @@ export default function App() {
                 )}
               </AnimatePresence>
             </motion.div>
-          ) : results.length === 0 ? (
+          ) : rawData.length === 0 ? (
             <motion.div
               key="upload"
               initial={{ opacity: 0, y: 10 }}
@@ -445,6 +523,13 @@ export default function App() {
               className="space-y-6"
             >
               {/* Stats Grid */}
+              {results.length === 0 ? (
+                <div className="bg-white p-8 rounded-xl border border-[#141414]/10 text-center">
+                  <p className="text-sm font-bold">没有符合当前筛选条件的记录</p>
+                  <p className="mt-2 text-xs opacity-50">请勾选“包含已结算（显示全部）”或检查原始数据中的“已结算”字段。</p>
+                </div>
+              ) : (
+                <>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-white p-5 rounded-xl border border-[#141414]/5 flex flex-col gap-1">
                   <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest opacity-40 font-bold">
@@ -508,6 +593,8 @@ export default function App() {
                   ))}
                 </div>
               </div>
+                </>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

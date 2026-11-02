@@ -5,6 +5,7 @@ export interface WorkRecord {
   '姓名': string;
   '一卡通号': string;
   '工作种类': string;
+  '场馆-去重引用': string;
   '开始时间': string | Date;
   '结束时间': string | Date;
   '工时单': string;
@@ -22,18 +23,42 @@ export interface SettlementResult {
 }
 
 const HOURLY_RATE = 25;
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+function parseShanghaiDate(value: string | Date): Date {
+  if (value instanceof Date) return new Date(value);
+
+  const text = String(value).trim();
+  // Spreadsheet timestamps without an offset represent Shanghai local time.
+  if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(text)) {
+    return new Date(`${text.replace(' ', 'T')}+08:00`);
+  }
+
+  return new Date(text);
+}
+
+function getShanghaiParts(date: Date): { year: number; month: number; day: number; hour: number } {
+  const shifted = new Date(date.getTime() + SHANGHAI_OFFSET_MS);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth(),
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+  };
+}
 
 function getDayKey(date: Date): string {
-  const d = new Date(date);
-  if (d.getHours() < 4) {
-    d.setDate(d.getDate() - 1);
+  const parts = getShanghaiParts(date);
+  const d = new Date(Date.UTC(parts.year, parts.month, parts.day));
+  if (parts.hour < 4) {
+    d.setUTCDate(d.getUTCDate() - 1);
   }
   return d.toISOString().split('T')[0];
 }
 
 function getLate23Hours(row: WorkRecord): number {
-  const startTime = new Date(row['开始时间']);
-  const endTime = new Date(row['结束时间']);
+  const startTime = parseShanghaiDate(row['开始时间']);
+  const endTime = parseShanghaiDate(row['结束时间']);
 
   if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) return 0;
 
@@ -41,28 +66,24 @@ function getLate23Hours(row: WorkRecord): number {
   if (hours <= 0) return 0;
 
   // Determine the "day" this shift belongs to (same logic as getDayKey: day starts at 04:00)
-  const dayDate = new Date(startTime);
-  if (dayDate.getHours() < 4) {
-    dayDate.setDate(dayDate.getDate() - 1);
+  const startParts = getShanghaiParts(startTime);
+  const dayDate = new Date(Date.UTC(startParts.year, startParts.month, startParts.day));
+  if (startParts.hour < 4) {
+    dayDate.setUTCDate(dayDate.getUTCDate() - 1);
   }
 
-  // 23:00 threshold for this day
-  const threshold23 = new Date(dayDate);
-  threshold23.setHours(23, 0, 0, 0);
+  // Night work runs from 23:00 through 04:00 the following day.
+  const nightStart = new Date(dayDate.getTime() + 23 * 60 * 60 * 1000 - SHANGHAI_OFFSET_MS);
+  const nightEnd = new Date(dayDate.getTime() + 28 * 60 * 60 * 1000 - SHANGHAI_OFFSET_MS);
 
-  if (endTime <= threshold23) {
-    // All work is before 23:00
-    return 0;
-  } else if (startTime >= threshold23) {
-    // All work is after 23:00
-    return hours;
-  } else {
-    // Work spans the 23:00 threshold — prorate by duration
-    const totalDuration = endTime.getTime() - startTime.getTime();
-    if (totalDuration <= 0) return 0;
-    const lateDuration = endTime.getTime() - threshold23.getTime();
-    return hours * (lateDuration / totalDuration);
-  }
+  const totalDuration = endTime.getTime() - startTime.getTime();
+  if (totalDuration <= 0) return 0;
+
+  const lateStart = Math.max(startTime.getTime(), nightStart.getTime());
+  const lateEnd = Math.min(endTime.getTime(), nightEnd.getTime());
+  const lateDuration = Math.max(0, lateEnd - lateStart);
+
+  return hours * (lateDuration / totalDuration);
 }
 
 function isVenueWork(jobType: string): boolean {
@@ -78,7 +99,7 @@ export function normalizeData(rawData: any[]): WorkRecord[] {
   
   // Standard column order from instructions
   const columns = [
-    '活动名称', '姓名', '一卡通号', '工作种类', '开始时间', 
+    '活动名称', '姓名', '一卡通号', '工作种类', '场馆-去重引用', '开始时间',
     '结束时间', '工时单', '基础工时', '节假日、期末周', '工作备注', '已结算'
   ];
 
@@ -106,7 +127,12 @@ export function normalizeData(rawData: any[]): WorkRecord[] {
   return rawData as WorkRecord[];
 }
 
-export function processWorkHours(data: WorkRecord[], hourlyRate: number): SettlementResult[] {
+export function processWorkHours(
+  data: WorkRecord[],
+  hourlyRate: number,
+  includeSettled = false,
+  venues: string[] = []
+): SettlementResult[] {
   const records: { name: string; card: string; adjustedHours: number }[] = [];
   
   // Group by Name, Card, and Day
@@ -115,11 +141,13 @@ export function processWorkHours(data: WorkRecord[], hourlyRate: number): Settle
   data.forEach(row => {
     // Skip rows that don't have a name or start time
     if (!row['姓名'] || !row['开始时间']) return;
+    if (venues.length > 0 && !venues.includes(String(row['场馆-去重引用'] || '').trim())) return;
 
-    // Skip rows that are already settled ("是")
-    if (String(row['已结算'] || '').trim() === '是') return;
+    // By default calculate unsettled rows; the optional mode includes all rows.
+    const isSettled = String(row['已结算'] || '').trim() === '是';
+    if (!includeSettled && isSettled) return;
 
-    const startTime = new Date(row['开始时间']);
+    const startTime = parseShanghaiDate(row['开始时间']);
     // Check if date is valid
     if (isNaN(startTime.getTime())) return;
 
@@ -137,7 +165,7 @@ export function processWorkHours(data: WorkRecord[], hourlyRate: number): Settle
     
     // Split into venue and non-venue work
     const venueWork = group.filter(r => isVenueWork(r['工作种类']))
-      .sort((a, b) => new Date(a['开始时间']).getTime() - new Date(b['开始时间']).getTime());
+      .sort((a, b) => parseShanghaiDate(a['开始时间']).getTime() - parseShanghaiDate(b['开始时间']).getTime());
     
     const nonVenueWork = group.filter(r => !isVenueWork(r['工作种类']));
 

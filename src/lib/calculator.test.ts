@@ -12,6 +12,7 @@ function makeRecord(overrides: Partial<WorkRecord> = {}): WorkRecord {
     '姓名': '张三',
     '一卡通号': '123456',
     '工作种类': '实习',
+    '场馆-去重引用': '测试场馆',
     '开始时间': '2024-01-15T09:00:00',
     '结束时间': '2024-01-15T17:00:00',
     '工时单': '',
@@ -39,7 +40,7 @@ describe('normalizeData', () => {
   });
 
   it('maps array-of-arrays to WorkRecord objects', () => {
-    const row = ['活动A', '李四', '789', '实习', '2024-01-15', '2024-01-15', '', 4, '', '', ''];
+    const row = ['活动A', '李四', '789', '实习', '测试场馆', '2024-01-15', '2024-01-15', '', 4, '', '', ''];
     const [record] = normalizeData([row]);
     expect(record['姓名']).toBe('李四');
     expect(record['基础工时']).toBe(4);
@@ -61,6 +62,25 @@ describe('非场地工作 (non-venue work)', () => {
     const record = makeRecord({ '工作种类': '其他', '基础工时': 10 });
     expect(calcHours(record)).toBe(10);
   });
+
+  it('can filter by venue', () => {
+    const selectedVenue = makeRecord({ '场馆-去重引用': '焦廷标馆', '基础工时': 4 });
+    const otherVenue = makeRecord({ '场馆-去重引用': '体育馆', '基础工时': 10 });
+    const results = processWorkHours([selectedVenue, otherVenue], 25, false, ['焦廷标馆']);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]['结算工时']).toBe(4);
+  });
+
+  it('can filter by multiple venues', () => {
+    const venueA = makeRecord({ '场馆-去重引用': '焦廷标馆', '基础工时': 4 });
+    const venueB = makeRecord({ '场馆-去重引用': '体育馆', '基础工时': 6 });
+    const venueC = makeRecord({ '场馆-去重引用': '圆报二楼多功能厅', '基础工时': 8 });
+    const results = processWorkHours([venueA, venueB, venueC], 25, false, ['焦廷标馆', '体育馆']);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]['结算工时']).toBe(12);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -72,6 +92,15 @@ describe('已结算行 (settled rows)', () => {
     const record = makeRecord({ '已结算': '是', '基础工时': 8 });
     const results = processWorkHours([record], 25);
     expect(results).toHaveLength(0);
+  });
+
+  it('includes settled rows when requested', () => {
+    const settled = makeRecord({ '已结算': '是', '基础工时': 8 });
+    const unsettled = makeRecord({ '已结算': '否', '基础工时': 4 });
+    const results = processWorkHours([settled, unsettled], 25, true);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]['结算工时']).toBe(16);
   });
 });
 
@@ -145,7 +174,18 @@ describe('23:00夜间规则 (late-night doubling)', () => {
       '结束时间': '2024-01-15T17:00:00',
       '基础工时': 8,
     });
+
     expect(calcHours(record)).toBe(8);
+  });
+
+  it('interprets ISO timestamps without an offset as Asia/Shanghai time', () => {
+    const record = makeRecord({
+      '开始时间': '2024-01-15T23:00:00',
+      '结束时间': '2024-01-16T02:00:00',
+      '基础工时': 3,
+    });
+
+    expect(calcHours(record)).toBe(6);
   });
 
   it('doubles hours entirely after 23:00', () => {
@@ -180,6 +220,28 @@ describe('23:00夜间规则 (late-night doubling)', () => {
       '基础工时': 2,
     });
     expect(calcHours(record)).toBe(4);
+  });
+
+  it('only counts the part before 04:00 when a shift crosses the day boundary', () => {
+    const record = makeRecord({
+      '开始时间': '2024-01-16T02:00:00',
+      '结束时间': '2024-01-16T06:00:00',
+      '基础工时': 4,
+    });
+
+    // 02:00-04:00 is late-night work; 04:00-06:00 belongs to the next day.
+    expect(calcHours(record)).toBe(6);
+  });
+
+  it('does not count work after 04:00 as late-night work', () => {
+    const record = makeRecord({
+      '开始时间': '2024-01-15T23:00:00',
+      '结束时间': '2024-01-16T06:00:00',
+      '基础工时': 7,
+    });
+
+    // 23:00-04:00 is late-night work; 04:00-06:00 is regular work.
+    expect(calcHours(record)).toBe(12);
   });
 });
 
