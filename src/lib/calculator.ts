@@ -132,8 +132,10 @@ export function processWorkHours(
   data: WorkRecord[],
   hourlyRate: number,
   includeSettled = false,
-  venues: string[] = []
+  venues?: string[]
 ): SettlementResult[] {
+  // 不传 venues 时不过滤（全量）；显式传空数组表示「一个场馆都没选」，返回空结果。
+  // App 在「取消全部勾选」时走的就是空数组这条路，所以这里的语义必须是「筛掉全部」。
   const records: { name: string; card: string; rawHours: number; adjustedHours: number }[] = [];
   
   // Group by Name, Card, and Day
@@ -142,7 +144,8 @@ export function processWorkHours(
   data.forEach(row => {
     // Skip rows that don't have a name or start time
     if (!row['姓名'] || !row['开始时间']) return;
-    if (venues.length > 0 && !venues.includes(String(row['场馆-去重引用'] || '').trim())) return;
+    // venues 未传 = 不过滤；传了数组（哪怕为空）= 只保留列出的场馆
+    if (venues && !venues.includes(String(row['场馆-去重引用'] || '').trim())) return;
 
     // By default calculate unsettled rows; the optional mode includes all rows.
     const isSettled = String(row['已结算'] || '').trim() === '是';

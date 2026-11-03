@@ -20,7 +20,8 @@ export default function App() {
   const [showAmount, setShowAmount] = useState(true);
   const [showRawHours, setShowRawHours] = useState(true);
   const [includeSettled, setIncludeSettled] = useState(false);
-  const [venueFilters, setVenueFilters] = useState<string[]>([]);
+  // undefined = 不筛选（全量）；数组（含空数组）= 只保留列出的场馆
+  const [venueFilters, setVenueFilters] = useState<string[] | undefined>(undefined);
   const [isVenueMenuOpen, setIsVenueMenuOpen] = useState(false);
   const [rawData, setRawData] = useState<WorkRecord[]>([]);
   const venueMenuRef = useRef<HTMLDivElement>(null);
@@ -193,7 +194,8 @@ export default function App() {
     setResults([]);
     setRawData([]);
     setIncludeSettled(false);
-    setVenueFilters([]);
+    // 空数组现在表示「筛掉全部」，所以回到「不筛选」要用 undefined
+    setVenueFilters(undefined);
     setError(null);
   };
 
@@ -318,7 +320,7 @@ export default function App() {
                     aria-haspopup="menu"
                   >
                     场馆
-                    {venueFilters.length !== availableVenues.length && (
+                    {venueFilters && venueFilters.length !== availableVenues.length && (
                       <span className="bg-[#141414] text-white rounded-full px-1.5 text-[10px]">
                         {venueFilters.length}
                       </span>
@@ -331,10 +333,14 @@ export default function App() {
                           <label key={venue} className="flex items-center gap-2 rounded px-2 py-2 text-xs font-bold cursor-pointer hover:bg-[#141414]/5">
                             <input
                               type="checkbox"
-                              checked={venueFilters.includes(venue)}
-                              onChange={(e) => setVenueFilters(current => e.target.checked
-                                ? [...current, venue]
-                                : current.filter(selected => selected !== venue))}
+                              checked={!venueFilters || venueFilters.includes(venue)}
+                              onChange={(e) => setVenueFilters(current => {
+                                // 首次交互时 current 是 undefined（= 全选），先展开成完整列表
+                                const list = current ?? availableVenues;
+                                return e.target.checked
+                                  ? [...list, venue]
+                                  : list.filter(selected => selected !== venue);
+                              })}
                               className="h-4 w-4 accent-[#141414]"
                             />
                             <span className="truncate">{venue || '未填写场馆'}</span>

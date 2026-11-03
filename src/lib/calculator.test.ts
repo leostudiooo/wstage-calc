@@ -69,6 +69,7 @@ describe('非场地工作 (non-venue work)', () => {
     const results = processWorkHours([selectedVenue, otherVenue], 25, false, ['焦廷标馆']);
 
     expect(results).toHaveLength(1);
+    expect(results[0]['原始工时']).toBe(4);
     expect(results[0]['结算工时']).toBe(4);
   });
 
@@ -79,6 +80,22 @@ describe('非场地工作 (non-venue work)', () => {
     const results = processWorkHours([venueA, venueB, venueC], 25, false, ['焦廷标馆', '体育馆']);
 
     expect(results).toHaveLength(1);
+    expect(results[0]['结算工时']).toBe(12);
+  });
+
+  it('returns nothing when every venue is unchecked', () => {
+    // 空数组 = 用户把场馆全部取消勾选，应筛掉所有记录（而不是退回全量）
+    const a = makeRecord({ '场馆-去重引用': '焦廷标馆', '基础工时': 4 });
+    const b = makeRecord({ '场馆-去重引用': '体育馆', '基础工时': 6 });
+    expect(processWorkHours([a, b], 25, false, [])).toHaveLength(0);
+  });
+
+  it('does not filter when venues is omitted', () => {
+    const a = makeRecord({ '场馆-去重引用': '焦廷标馆', '基础工时': 4 });
+    const b = makeRecord({ '场馆-去重引用': '体育馆', '基础工时': 6 });
+    const results = processWorkHours([a, b], 25, false);
+    expect(results).toHaveLength(1);
+    // 两人同一天合计 10h：前 8h 正常 + 超出的 2h 翻倍 → 12
     expect(results[0]['结算工时']).toBe(12);
   });
 
