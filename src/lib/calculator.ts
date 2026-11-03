@@ -18,6 +18,7 @@ export interface WorkRecord {
 export interface SettlementResult {
   '姓名': string;
   '一卡通号': string;
+  '原始工时': number;
   '结算工时': number;
   '结算金额': number;
 }
@@ -133,7 +134,7 @@ export function processWorkHours(
   includeSettled = false,
   venues: string[] = []
 ): SettlementResult[] {
-  const records: { name: string; card: string; adjustedHours: number }[] = [];
+  const records: { name: string; card: string; rawHours: number; adjustedHours: number }[] = [];
   
   // Group by Name, Card, and Day
   const grouped = new Map<string, WorkRecord[]>();
@@ -192,25 +193,26 @@ export function processWorkHours(
       if (isFormal) adjusted *= 1.25;
       if (isHoliday) adjusted *= 2;
 
-      records.push({ name, card, adjustedHours: adjusted });
+      records.push({ name, card, rawHours: hours, adjustedHours: adjusted });
     });
 
     // Process Non-Venue Work
     nonVenueWork.forEach(row => {
       const hours = Number(row['基础工时']) || 0;
       if (hours <= 0) return;
-      records.push({ name, card, adjustedHours: hours });
+      records.push({ name, card, rawHours: hours, adjustedHours: hours });
     });
   });
 
   // Aggregate by person
-  const summaryMap = new Map<string, { name: string; card: string; totalHours: number }>();
+  const summaryMap = new Map<string, { name: string; card: string; rawHours: number; totalHours: number }>();
   
   records.forEach(rec => {
     const key = `${rec.name}|${rec.card}`;
     if (!summaryMap.has(key)) {
-      summaryMap.set(key, { name: rec.name, card: rec.card, totalHours: 0 });
+      summaryMap.set(key, { name: rec.name, card: rec.card, rawHours: 0, totalHours: 0 });
     }
+    summaryMap.get(key)!.rawHours += rec.rawHours;
     summaryMap.get(key)!.totalHours += rec.adjustedHours;
   });
 
@@ -220,6 +222,7 @@ export function processWorkHours(
     return {
       '姓名': item.name,
       '一卡通号': item.card,
+      '原始工时': item.rawHours,
       '结算工时': settlementHours,
       '结算金额': settlementHours * hourlyRate
     };

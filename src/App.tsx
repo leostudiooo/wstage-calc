@@ -18,6 +18,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [hourlyRate, setHourlyRate] = useState<number>(25);
   const [showAmount, setShowAmount] = useState(true);
+  const [showRawHours, setShowRawHours] = useState(true);
   const [includeSettled, setIncludeSettled] = useState(false);
   const [venueFilters, setVenueFilters] = useState<string[]>([]);
   const [isVenueMenuOpen, setIsVenueMenuOpen] = useState(false);
@@ -280,6 +281,14 @@ export default function App() {
                   title={showAmount ? "隐藏金额" : "显示金额"}
                 >
                   {showAmount ? <Eye size={18} /> : <EyeOff size={18} />}
+                </button>
+                <button
+                  onClick={() => setShowRawHours(!showRawHours)}
+                  className="p-2 hover:bg-[#141414]/5 rounded-full transition-colors"
+                  title={showRawHours ? "隐藏原始工时" : "显示原始工时"}
+                  aria-label={showRawHours ? "隐藏原始工时" : "显示原始工时"}
+                >
+                  {showRawHours ? <Eye size={18} /> : <EyeOff size={18} />}
                 </button>
                 <div className="flex items-center gap-2 bg-white border border-[#141414]/10 px-3 py-1.5 rounded-md">
                   <Settings2 size={14} className="opacity-40" />
@@ -567,10 +576,11 @@ export default function App() {
               <div className="bg-white rounded-xl border border-[#141414]/10 overflow-hidden shadow-sm">
                 <div className={cn(
                   "grid p-3 text-[10px] uppercase tracking-widest font-bold border-b border-[#141414]/10 bg-[#F5F5F4]",
-                  showAmount ? "grid-cols-4" : "grid-cols-3"
+                  showAmount && showRawHours ? "grid-cols-5" : showAmount || showRawHours ? "grid-cols-4" : "grid-cols-3"
                 )}>
                   <div className="px-3">姓名</div>
                   <div className="px-3">一卡通号</div>
+                  {showRawHours && <div className="px-3">原始工时</div>}
                   <div className="px-3">结算工时</div>
                   {showAmount && <div className="px-3">结算金额</div>}
                 </div>
@@ -578,10 +588,13 @@ export default function App() {
                   {results.map((row, idx) => (
                     <div key={idx} className={cn(
                       "grid p-3 hover:bg-[#141414]/5 transition-colors items-center",
-                      showAmount ? "grid-cols-4" : "grid-cols-3"
+                      showAmount && showRawHours ? "grid-cols-5" : showAmount || showRawHours ? "grid-cols-4" : "grid-cols-3"
                     )}>
                       <div className="px-3 font-bold text-sm">{row.姓名}</div>
                       <div className="px-3 font-mono text-[10px] opacity-40">{row.一卡通号}</div>
+                      {showRawHours && (
+                        <div className="px-3 font-bold text-sm">{row.原始工时.toFixed(1)}h</div>
+                      )}
                       <div className="px-3">
                         <span className={cn(
                           "px-2 py-0.5 rounded font-bold text-sm inline-block transition-all",
