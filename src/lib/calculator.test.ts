@@ -81,6 +81,15 @@ describe('非场地工作 (non-venue work)', () => {
     expect(results).toHaveLength(1);
     expect(results[0]['结算工时']).toBe(12);
   });
+
+  it('can filter records with an empty venue', () => {
+    const emptyVenue = makeRecord({ '场馆-去重引用': '', '基础工时': 4 });
+    const namedVenue = makeRecord({ '场馆-去重引用': '焦廷标馆', '基础工时': 6 });
+    const results = processWorkHours([emptyVenue, namedVenue], 25, false, ['']);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]['结算工时']).toBe(4);
+  });
 });
 
 // ---------------------------------------------------------------------------

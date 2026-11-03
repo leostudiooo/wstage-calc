@@ -25,8 +25,12 @@ export default function App() {
   const venueMenuRef = useRef<HTMLDivElement>(null);
 
   const availableVenues = Array.from(
-    new Set<string>(rawData.map(row => String(row['场馆-去重引用'] || '').trim()).filter(Boolean))
-  ).sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    new Set<string>(rawData.map(row => String(row['场馆-去重引用'] || '').trim()))
+  ).sort((a, b) => {
+    if (!a) return -1;
+    if (!b) return 1;
+    return a.localeCompare(b, 'zh-CN');
+  });
 
   useEffect(() => {
     setVenueFilters(availableVenues);
@@ -324,7 +328,7 @@ export default function App() {
                                 : current.filter(selected => selected !== venue))}
                               className="h-4 w-4 accent-[#141414]"
                             />
-                            <span className="truncate">{venue}</span>
+                            <span className="truncate">{venue || '未填写场馆'}</span>
                           </label>
                         ))}
                       <button
